@@ -3,166 +3,246 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Awis' Garden - Professional Edition</title>
+    <title>Awis' Garden - Professional Engine</title>
     <style>
         :root {
-            --bg-color: #0f172a;
-            --accent: #fbbf24;
+            --bg-color: #0f0f0f;
+            --ui-bg: rgba(0, 0, 0, 0.7);
+            --accent: #4CAF50;
         }
         body {
             margin: 0;
+            padding: 0;
             background-color: var(--bg-color);
             display: flex;
-            flex-direction: column;
             justify-content: center;
             align-items: center;
             height: 100vh;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: white;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
         }
         #game-container {
             position: relative;
-            border: 8px solid #334155;
-            border-radius: 4px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            border: 6px solid #222;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            background: #000;
         }
         canvas {
             image-rendering: pixelated;
             display: block;
         }
-        #ui-layer {
+        #ui-overlay {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 15px;
+            left: 15px;
+            right: 15px;
+            color: #fff;
             pointer-events: none;
-            padding: 20px;
-            box-sizing: border-box;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
         }
-        .hud-card {
-            background: rgba(15, 23, 42, 0.8);
-            border-left: 4px solid var(--accent);
-            padding: 10px 20px;
-            display: inline-block;
-            backdrop-filter: blur(4px);
+        .ui-panel {
+            background: var(--ui-bg);
+            padding: 12px;
+            border: 2px solid #555;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 14px;
         }
-        .clock-container {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            text-align: right;
-        }
-        #time-display { font-size: 24px; font-weight: bold; }
-        #phase-display { font-size: 14px; text-transform: uppercase; color: var(--accent); }
-        .inventory-card {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-        }
+        .clock-highlight { color: #ffd700; font-weight: bold; }
+        .inventory-highlight { color: #a2f2a2; }
     </style>
 </head>
 <body>
 
 <div id="game-container">
     <canvas id="gameCanvas"></canvas>
-    <div id="ui-layer">
-        <div class="hud-card clock-container">
-            <div id="time-display">00:00</div>
-            <div id="phase-display">Día</div>
+    <div id="ui-overlay">
+        <div class="ui-panel">
+            <div id="game-time" class="clock-highlight">HORA: 00:00</div>
+            <div id="game-period">ESTADO: DÍA</div>
+            <div id="game-day">DÍA: 1</div>
         </div>
-        <div class="hud-card inventory-card">
-            <div>🎒 INVENTARIO</div>
-            <div style="font-size: 20px;">🌱 Semillas: <span id="seed-count">0</span></div>
+        <div class="ui-panel">
+            <div id="inventory" class="inventory-highlight">SEMILLAS: 0</div>
+            <div style="font-size: 10px; margin-top: 5px; opacity: 0.8;">[E] RECOGER / [ESPACIO] PLANTAR</div>
         </div>
     </div>
 </div>
 
 <script>
 /**
- * AWIS' GARDEN - SISTEMA DE SEMILLAS Y RELOJ AVANZADO
+ * AWIS' GARDEN - ADVANCED RETRO ENGINE
+ * Update: Random Spawning & Time Refinement
  */
 
 const CONFIG = {
     TILE_SIZE: 32,
     MAP_COLS: 25,
     MAP_ROWS: 18,
-    SCALE: 1.5,
-    MINUTES_PER_DAY: 20, // 10 min día / 10 min noche
-    SEED_SPAWN_RATE: 0.005, // Probabilidad por frame de que aparezca una semilla
-    MAX_SEEDS_ON_GROUND: 10
+    SCALE: 2,
+    REAL_MINUTES_PER_DAY: 20, // 10 min día, 10 min noche
+    FPS: 60,
+    PLAYER_SPEED: 3.0,
+    SEED_SPAWN_CHANCE: 0.005 // Probabilidad por frame de que aparezca una semilla
 };
 
+// --- GENERADOR DE TEXTURAS MEJORADO ---
 const TextureGenerator = {
-    generate() {
+    createCanvas(w, h) {
         const c = document.createElement('canvas');
-        c.width = 256; c.height = 256;
-        const ctx = c.getContext('2d');
+        c.width = w; c.height = h;
+        return [c, c.getContext('2d')];
+    },
 
-        // Pasto
-        ctx.fillStyle = '#2d6a4f';
+    generateTileset() {
+        const [canvas, ctx] = this.createCanvas(512, 256);
+        
+        // 1. Hierba (Grass)
+        ctx.fillStyle = '#3e8948';
         ctx.fillRect(0, 0, 32, 32);
-        ctx.fillStyle = '#1b4332';
-        ctx.fillRect(5, 5, 2, 2);
+        ctx.fillStyle = '#34723c';
+        ctx.fillRect(4, 4, 2, 2); ctx.fillRect(20, 18, 2, 2);
 
-        // Tierra Maceta
-        ctx.fillStyle = '#582f0e';
+        // 2. Tierra de Maceta
+        ctx.fillStyle = '#63391d';
         ctx.fillRect(32, 0, 32, 32);
-        ctx.strokeStyle = '#331800';
-        ctx.strokeRect(34, 2, 28, 28);
 
-        // Semilla en el suelo
-        ctx.fillStyle = '#fde047'; // Amarillo brillante para que sea visible
+        // 3. Maceta (Pot)
+        ctx.fillStyle = '#d36837';
+        ctx.fillRect(64, 0, 32, 32);
+        ctx.strokeStyle = '#3d1e0f';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(66, 2, 28, 28);
+
+        // 4. Semilla Visible en el Suelo (Item)
+        ctx.fillStyle = '#f0e68c';
         ctx.beginPath();
-        ctx.arc(80, 16, 4, 0, Math.PI * 2);
+        ctx.arc(104, 24, 4, 0, Math.PI * 2);
         ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(102, 22, 2, 2); // Brillo de la semilla
 
-        // Jugadora (Mujer - Estilo Retro)
-        ctx.fillStyle = '#ffb703'; // Cabello
-        ctx.fillRect(128, 2, 16, 8);
-        ctx.fillStyle = '#ffdbac'; // Piel
-        ctx.fillRect(128, 10, 16, 10);
-        ctx.fillStyle = '#e91e63'; // Vestido
-        ctx.fillRect(128, 20, 16, 12);
+        // 5. Planta - Crecimiento
+        ctx.fillStyle = '#7cfc00';
+        // Fase 1: Brote
+        ctx.fillRect(128 + 14, 20, 4, 6);
+        // Fase 2: Creciendo
+        ctx.fillRect(160 + 12, 12, 8, 16);
+        ctx.fillStyle = '#228b22';
+        ctx.fillRect(160 + 8, 15, 4, 4);
+        // Fase 3: Flor (Final)
+        ctx.fillStyle = '#228b22';
+        ctx.fillRect(192 + 14, 10, 4, 20);
+        ctx.fillStyle = '#ff69b4';
+        ctx.fillRect(192 + 10, 4, 12, 8);
 
-        // Planta Creciendo
-        ctx.fillStyle = '#4ade80';
-        ctx.fillRect(160, 10, 6, 22); // Tallo
+        // 6. Jugadora (Mujer Retro)
+        // Pelo
+        ctx.fillStyle = '#4b2c20';
+        ctx.fillRect(224 + 8, 2, 16, 12); // Pelo arriba
+        ctx.fillRect(224 + 22, 10, 4, 14); // Coleta
+        // Piel
+        ctx.fillStyle = '#ffdbac';
+        ctx.fillRect(224 + 10, 6, 12, 12);
+        // Vestido
+        ctx.fillStyle = '#e91e63';
+        ctx.fillRect(224 + 8, 18, 16, 10);
+        // Ojos
+        ctx.fillStyle = '#000';
+        ctx.fillRect(224 + 12, 10, 2, 2);
+        ctx.fillRect(224 + 18, 10, 2, 2);
 
-        return c;
+        return canvas;
     }
 };
 
-class Collectible {
+// --- ENTIDADES ---
+class Vector2 { constructor(x, y) { this.x = x; this.y = y; } }
+
+class SeedItem {
     constructor(x, y) {
-        this.x = x;
-        this.y = y;
+        this.pos = new Vector2(x, y);
         this.width = 20;
         this.height = 20;
+        this.collected = false;
+        this.bob = 0; // Animación de flotado
+    }
+    draw(ctx, tileset) {
+        this.bob += 0.1;
+        let yOffset = Math.sin(this.bob) * 3;
+        ctx.drawImage(tileset, 96, 0, 32, 32, this.pos.x, this.pos.y + yOffset, 32, 32);
     }
 }
 
 class Pot {
     constructor(x, y) {
-        this.x = x;
-        this.y = y;
+        this.pos = new Vector2(x, y);
+        this.width = 32;
+        this.height = 32;
         this.hasSeed = false;
-        this.growth = 0;
-        this.plantedAt = 0;
+        this.growthLevel = 0;
+        this.plantedTime = 0;
+    }
+
+    update(currentTime) {
+        if (this.hasSeed && this.growthLevel < 3) {
+            let elapsed = currentTime - this.plantedTime;
+            // Crecimiento: Cada 1 min real sube un nivel (60000ms)
+            if (elapsed > 180000) this.growthLevel = 3;
+            else if (elapsed > 120000) this.growthLevel = 2;
+            else if (elapsed > 60000) this.growthLevel = 1;
+        }
+    }
+
+    draw(ctx, tileset) {
+        ctx.drawImage(tileset, 64, 0, 32, 32, this.pos.x, this.pos.y, 32, 32);
+        if (this.hasSeed) {
+            let sx = 96 + (this.growthLevel * 32);
+            ctx.drawImage(tileset, sx, 0, 32, 32, this.pos.x, this.pos.y - 12, 32, 32);
+        }
     }
 }
 
-class Game {
+class Player {
+    constructor(x, y) {
+        this.pos = new Vector2(x, y);
+        this.width = 24;
+        this.height = 24;
+        this.seeds = 2; // Inicia con 2 semillas
+    }
+
+    update(input) {
+        if (input.left) this.pos.x -= CONFIG.PLAYER_SPEED;
+        if (input.right) this.pos.x += CONFIG.PLAYER_SPEED;
+        if (input.up) this.pos.y -= CONFIG.PLAYER_SPEED;
+        if (input.down) this.pos.y += CONFIG.PLAYER_SPEED;
+
+        // Colisiones con bordes
+        this.pos.x = Math.max(0, Math.min(this.pos.x, (CONFIG.MAP_COLS * 32) - 32));
+        this.pos.y = Math.max(0, Math.min(this.pos.y, (CONFIG.MAP_ROWS * 32) - 32));
+    }
+
+    draw(ctx, tileset) {
+        ctx.drawImage(tileset, 224, 0, 32, 32, this.pos.x, this.pos.y, 32, 32);
+    }
+}
+
+// --- ENGINE ---
+class Engine {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
         this.ctx = this.canvas.getContext('2d');
-        this.tileset = TextureGenerator.generate();
+        this.tileset = TextureGenerator.generateTileset();
         
-        this.player = { x: 100, y: 100, seeds: 0, speed: 3 };
-        this.seedsOnGround = [];
+        this.player = new Player(400, 300);
         this.pots = [];
-        this.keys = {};
-        this.worldTime = 0; // ms
+        this.worldSeeds = [];
+        this.input = { up: false, down: false, left: false, right: false };
+        this.worldTime = 0;
+        this.dayLength = CONFIG.REAL_MINUTES_PER_DAY * 60 * 1000;
 
         this.init();
     }
@@ -170,26 +250,37 @@ class Game {
     init() {
         this.canvas.width = CONFIG.MAP_COLS * CONFIG.TILE_SIZE;
         this.canvas.height = CONFIG.MAP_ROWS * CONFIG.TILE_SIZE;
-        
-        // Crear jardín inicial
-        for(let i=0; i<5; i++) {
-            this.pots.push(new Pot(200 + i*50, 250));
+        this.canvas.style.width = (this.canvas.width * CONFIG.SCALE) + 'px';
+        this.canvas.style.height = (this.canvas.height * CONFIG.SCALE) + 'px';
+
+        // Crear cuadrícula de macetas
+        for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 2; j++) {
+                this.pots.push(new Pot(250 + i * 80, 150 + j * 80));
+            }
         }
 
-        window.addEventListener('keydown', e => {
-            this.keys[e.key.toLowerCase()] = true;
-            if(e.key.toLowerCase() === 'e') this.tryPickup();
-            if(e.key.toLowerCase() === ' ') this.tryPlant();
-        });
-        window.addEventListener('keyup', e => this.keys[e.key.toLowerCase()] = false);
-        
-        this.loop();
+        window.addEventListener('keydown', e => this.handleKey(e, true));
+        window.addEventListener('keyup', e => this.handleKey(e, false));
     }
 
-    tryPickup() {
-        this.seedsOnGround = this.seedsOnGround.filter(s => {
-            const dist = Math.hypot(this.player.x - s.x, this.player.y - s.y);
-            if(dist < 30) {
+    handleKey(e, isDown) {
+        const k = e.key.toLowerCase();
+        if (k === 'arrowup' || k === 'w') this.input.up = isDown;
+        if (k === 'arrowdown' || k === 's') this.input.down = isDown;
+        if (k === 'arrowleft' || k === 'a') this.input.left = isDown;
+        if (k === 'arrowright' || k === 'd') this.input.right = isDown;
+        
+        if (isDown) {
+            if (k === 'e') this.collectSeed();
+            if (k === ' ') this.plantSeed();
+        }
+    }
+
+    collectSeed() {
+        this.worldSeeds = this.worldSeeds.filter(seed => {
+            let dist = Math.hypot(this.player.pos.x - seed.pos.x, this.player.pos.y - seed.pos.y);
+            if (dist < 40) {
                 this.player.seeds++;
                 return false;
             }
@@ -197,105 +288,93 @@ class Game {
         });
     }
 
-    tryPlant() {
-        if(this.player.seeds <= 0) return;
-        
-        for(let p of this.pots) {
-            const dist = Math.hypot(this.player.x - p.x, this.player.y - p.y);
-            if(dist < 40 && !p.hasSeed) {
-                p.hasSeed = true;
-                p.plantedAt = this.worldTime;
+    plantSeed() {
+        if (this.player.seeds <= 0) return;
+        this.pots.forEach(pot => {
+            let dist = Math.hypot(this.player.pos.x - pot.pos.x, this.player.pos.y - pot.pos.y);
+            if (dist < 45 && !pot.hasSeed) {
+                pot.hasSeed = true;
+                pot.plantedTime = this.worldTime;
                 this.player.seeds--;
-                break;
             }
-        }
+        });
     }
 
     spawnSeeds() {
-        if(this.seedsOnGround.length < CONFIG.MAX_SEEDS_ON_GROUND) {
-            if(Math.random() < CONFIG.SEED_SPAWN_RATE) {
-                this.seedsOnGround.push(new Collectible(
-                    Math.random() * (this.canvas.width - 32),
-                    Math.random() * (this.canvas.height - 32)
-                ));
-            }
+        if (Math.random() < CONFIG.SEED_SPAWN_CHANCE) {
+            let rx = Math.random() * (this.canvas.width - 32);
+            let ry = Math.random() * (this.canvas.height - 32);
+            this.worldSeeds.push(new SeedItem(rx, ry));
         }
     }
 
     update(dt) {
         this.worldTime += dt;
-        
-        // Movimiento
-        if(this.keys['w']) this.player.y -= this.player.speed;
-        if(this.keys['s']) this.player.y += this.player.speed;
-        if(this.keys['a']) this.player.x -= this.player.speed;
-        if(this.keys['d']) this.player.x += this.player.speed;
-
+        this.player.update(this.input);
+        this.pots.forEach(p => p.update(this.worldTime));
         this.spawnSeeds();
+
+        // Limitar número de semillas en suelo para no saturar
+        if (this.worldSeeds.length > 15) this.worldSeeds.shift();
+
         this.updateUI();
     }
 
     updateUI() {
-        const dayMS = CONFIG.MINUTES_PER_DAY * 60 * 1000;
-        const currentCycle = this.worldTime % dayMS;
-        const hour = Math.floor((currentCycle / dayMS) * 24);
-        const minute = Math.floor(((currentCycle / dayMS) * 1440) % 60);
-        const isNight = hour >= 12; // 12 horas día, 12 horas noche (basado en los 20 min)
+        let dayCycle = this.worldTime % this.dayLength;
+        let progress = dayCycle / this.dayLength;
+        let hour = Math.floor(progress * 24);
+        let min = Math.floor((progress * 1440) % 60);
+        let isNight = progress > 0.5;
 
-        document.getElementById('time-display').innerText = 
-            `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        document.getElementById('phase-display').innerText = isNight ? "🌙 Noche" : "☀️ Día";
-        document.getElementById('seed-count').innerText = this.player.seeds;
-
-        this.isNight = isNight;
+        document.getElementById('game-time').innerText = `HORA: ${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
+        document.getElementById('game-period').innerText = `ESTADO: ${isNight ? 'NOCHE' : 'DÍA'}`;
+        document.getElementById('game-day').innerText = `DÍA: ${Math.floor(this.worldTime / this.dayLength) + 1}`;
+        document.getElementById('inventory').innerText = `SEMILLAS: ${this.player.seeds}`;
+        
+        return isNight;
     }
 
-    draw() {
+    render(isNight) {
         const ctx = this.ctx;
-        ctx.clearRect(0,0, this.canvas.width, this.canvas.height);
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Dibujar pasto
-        for(let i=0; i<CONFIG.MAP_COLS; i++) {
-            for(let j=0; j<CONFIG.MAP_ROWS; j++) {
+        // 1. Dibujar Pasto
+        for (let i = 0; i < CONFIG.MAP_COLS; i++) {
+            for (let j = 0; j < CONFIG.MAP_ROWS; j++) {
                 ctx.drawImage(this.tileset, 0, 0, 32, 32, i*32, j*32, 32, 32);
             }
         }
 
-        // Semillas en suelo
-        this.seedsOnGround.forEach(s => {
-            ctx.drawImage(this.tileset, 64, 0, 32, 32, s.x, s.y, 32, 32);
-        });
+        // 2. Dibujar Semillas en el suelo
+        this.worldSeeds.forEach(s => s.draw(ctx, this.tileset));
 
-        // Macetas
-        this.pots.forEach(p => {
-            ctx.drawImage(this.tileset, 32, 0, 32, 32, p.x, p.y, 32, 32);
-            if(p.hasSeed) {
-                ctx.drawImage(this.tileset, 160, 0, 32, 32, p.x, p.y - 10, 32, 32);
-            }
-        });
+        // 3. Dibujar Macetas
+        this.pots.forEach(p => p.draw(ctx, this.tileset));
 
-        // Jugadora
-        ctx.drawImage(this.tileset, 128, 0, 32, 32, this.player.x, this.player.y, 32, 32);
+        // 4. Dibujar Jugadora
+        this.player.draw(ctx, this.tileset);
 
-        // Filtro Noche
-        if(this.isNight) {
-            ctx.fillStyle = "rgba(15, 23, 42, 0.6)";
-            ctx.fillRect(0,0, this.canvas.width, this.canvas.height);
+        // 5. Filtro Noche
+        if (isNight) {
+            ctx.fillStyle = 'rgba(10, 20, 60, 0.6)';
+            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         }
     }
 
     loop(timestamp) {
-        if(!this.lastTime) this.lastTime = timestamp;
-        const dt = timestamp - this.lastTime;
+        if (!this.lastTime) this.lastTime = timestamp;
+        let dt = timestamp - this.lastTime;
         this.lastTime = timestamp;
 
-        this.update(dt);
-        this.draw();
+        let isNight = this.update(dt);
+        this.render(isNight);
         requestAnimationFrame(t => this.loop(t));
     }
 }
 
-new Game();
+const game = new Engine();
+requestAnimationFrame(t => game.loop(t));
 </script>
 </body>
 </html>
